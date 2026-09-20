@@ -1,0 +1,180 @@
+local ServerScriptService = game:GetService("ServerScriptService")
+local Selection = game:GetService("Selection")
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+
+local Toolbar = plugin:CreateToolbar("Model Transparency")
+local FormatModelButton = Toolbar:CreateButton("Change Transparency","A tool to change the transparency for models.","rbxassetid://95989072970490")
+
+FormatModelButton.ClickableWhenViewportHidden = true
+
+local MAXVALUE = 1
+local MAXCHARACTERS = 5
+
+local WidgetInfo = DockWidgetPluginGuiInfo.new(
+	Enum.InitialDockState.Float,
+	false,   
+	false,
+	200,    
+	300,    
+	200,   
+	300    
+)
+local TransparencyWidget = plugin:CreateDockWidgetPluginGuiAsync("TestWidget", WidgetInfo)
+TransparencyWidget.Title = "Model Transparency Modification"
+
+local function AddCorner(Location)
+	local UICorner = Instance.new("UICorner")
+	UICorner.CornerRadius = UDim.new(0.1,0)
+	UICorner.Parent = Location
+end
+
+
+local HoldFrame = Instance.new("Frame",TransparencyWidget)
+HoldFrame.Size = UDim2.new(1,0,0.9,0)
+HoldFrame.BackgroundTransparency = 1
+HoldFrame.Position = UDim2.new(0,0,0,0)
+
+local FramePadding = Instance.new("UIPadding", HoldFrame)
+FramePadding.PaddingTop = UDim.new(0.05,0)
+
+
+local Folder = Instance.new("Folder",HoldFrame)
+
+local UiListLayout = Instance.new("UIListLayout", HoldFrame)
+UiListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UiListLayout.Padding = UDim.new(0.05,0)
+UiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local Title = Instance.new("TextLabel", HoldFrame)
+Title.Size = UDim2.new(0.75, 0, 0.1, 0)
+Title.Text = "Transparency Modifier"
+Title.BackgroundTransparency = 1
+Title.LayoutOrder = 1
+Title.TextSize = 24
+Title.TextScaled = true
+
+local InputField = Instance.new("TextBox", HoldFrame)
+InputField.Name = "InputField"
+InputField.Size = UDim2.new(0.4, 0, 0.2, 0)
+InputField.Text = "0"
+InputField.TextSize = 32
+InputField.BackgroundTransparency = 0.7
+InputField.LayoutOrder = 2
+AddCorner(InputField)
+
+local PushButton = Instance.new("TextButton", HoldFrame)
+PushButton.Name = "PushButton"
+PushButton.Size = UDim2.new(0.7, 0, 0.2, 0)
+PushButton.Text = "Push Change"
+PushButton.BackgroundColor3 = settings().Studio.Theme:GetColor(Enum.StudioStyleGuideColor.Button)
+PushButton.TextSize = 24
+PushButton.TextScaled = true
+PushButton.LayoutOrder = 6
+AddCorner(PushButton)
+
+local ButtonPadding = Instance.new("UIPadding", PushButton)
+ButtonPadding.PaddingLeft = UDim.new(0.05)
+ButtonPadding.PaddingRight = UDim.new(0.05)
+
+
+for i = 1, 3 do
+	local Spacer = Instance.new("Frame", HoldFrame)
+	Spacer.Name = "Spacer" .. i
+	Spacer.Size = UDim2.new(1, 0, 0.05, 0)
+	Spacer.BackgroundTransparency = 1
+	Spacer.LayoutOrder = 2 + i
+end
+
+
+local function syncGuiColors(objects)
+
+	local TextWhitelist = {
+		"TextButton",
+		"TextBox",
+		"TextLabel"
+	}
+	local BlackList = {
+		"InputField",
+		"PushButton"
+	}
+
+	local BackgroundWhitelist = {
+		"TextButton",
+		"TextBox",
+		"TextLabel",
+		"Frame",
+	}
+
+	local function setColors()
+		for _, guiObject in objects do
+			-- Sync background color
+			
+			if table.find(TextWhitelist, guiObject.ClassName) then
+				guiObject.TextColor3 = settings().Studio.Theme:GetColor(Enum.StudioStyleGuideColor.MainText)
+				guiObject.Font = Enum.Font.SourceSans
+			end
+			if table.find(BackgroundWhitelist, guiObject.ClassName) then
+				if table.find(BlackList, guiObject.Name) then continue end
+				guiObject.BackgroundColor3 = settings().Studio.Theme:GetColor(Enum.StudioStyleGuideColor.MainBackground)
+			end
+		end
+	end
+	-- Run 'setColors()' function to initially sync colors
+	setColors()
+	-- Connect 'ThemeChanged' event to the 'setColors()' function
+	settings().Studio.ThemeChanged:Connect(setColors)
+end
+syncGuiColors(TransparencyWidget:GetDescendants())
+
+InputField.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		local filter = InputField.Text:gsub("[^%d%.]","")
+		
+		if tonumber(filter) then
+			if tonumber(filter) > MAXVALUE then
+				filter = MAXVALUE
+			end
+			if filter ~= InputField.Text then
+				InputField.Text = filter
+				InputField.PlaceholderText = filter
+			end
+		else
+			InputField.Text = "0"
+		end
+	end
+end)
+
+InputField:GetPropertyChangedSignal("Text"):Connect(function()
+	if #InputField.Text > MAXCHARACTERS then
+		InputField.Text = string.sub(InputField.Text,0,MAXCHARACTERS)
+	end
+end)
+
+
+FormatModelButton.Click:Connect(function()
+	TransparencyWidget.Enabled = not TransparencyWidget.Enabled
+end)
+
+PushButton.MouseButton1Down:Connect(function()
+	local Recording = ChangeHistoryService:TryBeginRecording("Transparency Operation")
+	if not Recording then
+		return
+	end
+	local FullSelection = Selection:Get()
+	for _,v in pairs(FullSelection) do
+		local SelectedChildren = v:GetDescendants()
+		if not v:IsA("Model") then
+			local success = pcall(function()
+				v.Transparency = tonumber(InputField.Text)
+			end)
+		end
+		for _,j in pairs(SelectedChildren) do
+			local success = pcall(function()
+				j.Transparency = tonumber(InputField.Text)
+			end)
+		end
+	end
+	if Recording then
+		ChangeHistoryService:FinishRecording(Recording,Enum.FinishRecordingOperation.Commit)
+	end
+end)
